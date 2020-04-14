@@ -7,5 +7,5 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.5"
-flume = "0.7"
+flume = { version = "0.7", default-features = false }
 once_cell = "1.3"
