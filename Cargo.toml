@@ -1,0 +1,11 @@
+[package]
+name = "memory-socket"
+version = "0.0.0"
+authors = ["Brandon Williams <bwilliams.eng@gmail.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2018"
+
+[dependencies]
+bytes = "0.5"
+flume = "0.7"
+once_cell = "1.3"
