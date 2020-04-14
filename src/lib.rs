@@ -8,6 +8,9 @@ use std::{
     sync::Mutex,
 };
 
+#[cfg(feature = "async")]
+mod r#async;
+
 static SWITCHBOARD: Lazy<Mutex<SwitchBoard>> =
     Lazy::new(|| Mutex::new(SwitchBoard(HashMap::default(), 1)));
 
