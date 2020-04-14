@@ -21,3 +21,6 @@ async = ["futures", "flume/async"]
 [[test]]
 name = "async"
 required-features = ["async"]
+
+[package.metadata.docs.rs]
+all-features = true
