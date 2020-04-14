@@ -1,4 +1,4 @@
-use crate::{Incoming, MemoryListener, MemorySocket};
+use crate::{MemoryListener, MemorySocket};
 use bytes::{buf::BufExt, Buf, Bytes};
 use futures::{
     io::{AsyncRead, AsyncWrite},
@@ -12,6 +12,35 @@ use std::{
 };
 
 impl MemoryListener {
+    /// Returns a stream over the connections being received on this
+    /// listener.
+    ///
+    /// The returned stream will never return `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use futures::prelude::*;
+    /// use memory_socket::MemoryListener;
+    ///
+    /// # async fn work () -> ::std::io::Result<()> {
+    /// let mut listener = MemoryListener::bind(80).unwrap();
+    /// let mut incoming = listener.incoming_stream();
+    ///
+    /// while let Some(stream) = incoming.next().await {
+    ///     match stream {
+    ///         Ok(stream) => {
+    ///             println!("new client!");
+    ///         }
+    ///         Err(e) => { /* connection failed */ }
+    ///     }
+    /// }
+    /// # Ok(())}
+    /// ```
+    pub fn incoming_stream(&mut self) -> IncomingStream<'_> {
+        IncomingStream { inner: self }
+    }
+
     fn poll_accept(&mut self, context: &mut Context) -> Poll<Result<MemorySocket>> {
         match Pin::new(&mut self.incoming).poll_next(context) {
             Poll::Ready(Some(socket)) => Poll::Ready(Ok(socket)),
@@ -22,7 +51,18 @@ impl MemoryListener {
     }
 }
 
-impl<'a> Stream for Incoming<'a> {
+/// A Stream that infinitely accepts connections on a [`MemoryListener`].
+///
+/// This `struct` is created by the [`incoming_stream`] method on [`MemoryListener`].
+/// See its documentation for more info.
+///
+/// [`incoming_stream`]: struct.MemoryListener.html#method.incoming_stream
+/// [`MemoryListener`]: struct.MemoryListener.html
+pub struct IncomingStream<'a> {
+    inner: &'a mut MemoryListener,
+}
+
+impl<'a> Stream for IncomingStream<'a> {
     type Item = Result<MemorySocket>;
 
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context) -> Poll<Option<Self::Item>> {

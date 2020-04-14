@@ -24,6 +24,9 @@ use std::{
 #[cfg(feature = "async")]
 mod r#async;
 
+#[cfg(feature = "async")]
+pub use r#async::IncomingStream;
+
 static SWITCHBOARD: Lazy<Mutex<SwitchBoard>> =
     Lazy::new(|| Mutex::new(SwitchBoard(HashMap::default(), 1)));
 
