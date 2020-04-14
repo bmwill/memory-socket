@@ -1,3 +1,16 @@
+//! Provides an in-memory socket abstraction.
+//!
+//! The `memory-socket` crate provides the [`MemoryListener`] and [`MemorySocket`] types which can
+//! be thought of as in-memory versions of the standard library `TcpListener` and `TcpStream`
+//! types.
+//!
+//! ## Feature flags
+//!
+//! - `async`: Adds async support for [`MemorySocket`] and [`MemoryListener`]
+//!
+//! [`MemoryListener`]: struct.MemoryListener.html
+//! [`MemorySocket`]: struct.MemorySocket.html
+
 use bytes::{buf::BufExt, Buf, Bytes};
 use flume::{Receiver, Sender};
 use once_cell::sync::Lazy;
@@ -162,9 +175,8 @@ impl MemoryListener {
     /// # Examples
     ///
     /// ```no_run
-    /// use std::io::{Read, Result, Write};
-    ///
     /// use memory_socket::MemoryListener;
+    /// use std::io::{Read, Write};
     ///
     /// let mut listener = MemoryListener::bind(80).unwrap();
     ///
