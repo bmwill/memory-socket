@@ -17,3 +17,7 @@ default = []
 
 # enable async support
 async = ["futures", "flume/async"]
+
+[[test]]
+name = "async"
+required-features = ["async"]
