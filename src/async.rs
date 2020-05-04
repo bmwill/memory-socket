@@ -1,5 +1,5 @@
 use crate::{MemoryListener, MemorySocket};
-use bytes::{buf::BufExt, Buf, Bytes};
+use bytes::{buf::BufExt, Buf};
 use futures::{
     io::{AsyncRead, AsyncWrite},
     ready,
@@ -128,18 +128,30 @@ impl AsyncRead for MemorySocket {
 }
 
 impl AsyncWrite for MemorySocket {
-    fn poll_write(self: Pin<&mut Self>, _context: &mut Context, buf: &[u8]) -> Poll<Result<usize>> {
-        use flume::TrySendError;
-
-        match self.outgoing.try_send(Bytes::copy_from_slice(buf)) {
-            Ok(()) => Poll::Ready(Ok(buf.len())),
-            Err(TrySendError::Disconnected(_)) => Poll::Ready(Err(ErrorKind::BrokenPipe.into())),
-            Err(TrySendError::Full(_)) => unreachable!(),
-        }
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _context: &mut Context,
+        buf: &[u8],
+    ) -> Poll<Result<usize>> {
+        self.write_buffer.extend_from_slice(buf);
+        Poll::Ready(Ok(buf.len()))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context) -> Poll<Result<()>> {
-        Poll::Ready(Ok(()))
+    fn poll_flush(mut self: Pin<&mut Self>, _context: &mut Context) -> Poll<Result<()>> {
+        use flume::TrySendError;
+
+        if !self.write_buffer.is_empty() {
+            let buffer = self.write_buffer.split().freeze();
+            match self.outgoing.try_send(buffer) {
+                Ok(()) => Poll::Ready(Ok(())),
+                Err(TrySendError::Disconnected(_)) => {
+                    Poll::Ready(Err(ErrorKind::BrokenPipe.into()))
+                }
+                Err(TrySendError::Full(_)) => unreachable!(),
+            }
+        } else {
+            Poll::Ready(Ok(()))
+        }
     }
 
     fn poll_close(self: Pin<&mut Self>, _context: &mut Context) -> Poll<Result<()>> {

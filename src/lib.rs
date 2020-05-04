@@ -11,7 +11,7 @@
 //! [`MemoryListener`]: struct.MemoryListener.html
 //! [`MemorySocket`]: struct.MemorySocket.html
 
-use bytes::{buf::BufExt, Buf, Bytes};
+use bytes::{buf::BufExt, Buf, Bytes, BytesMut};
 use flume::{Receiver, Sender};
 use once_cell::sync::Lazy;
 use std::{
@@ -272,6 +272,7 @@ impl<'a> Iterator for Incoming<'a> {
 pub struct MemorySocket {
     incoming: Receiver<Bytes>,
     outgoing: Sender<Bytes>,
+    write_buffer: BytesMut,
     current_buffer: Option<Bytes>,
     seen_eof: bool,
 }
@@ -281,6 +282,7 @@ impl MemorySocket {
         Self {
             incoming,
             outgoing,
+            write_buffer: BytesMut::new(),
             current_buffer: None,
             seen_eof: false,
         }
@@ -393,13 +395,17 @@ impl Read for MemorySocket {
 
 impl Write for MemorySocket {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        match self.outgoing.send(Bytes::copy_from_slice(buf)) {
-            Ok(()) => Ok(buf.len()),
-            Err(_) => Err(ErrorKind::BrokenPipe.into()),
-        }
+        self.write_buffer.extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> Result<()> {
-        Ok(())
+        if !self.write_buffer.is_empty() {
+            self.outgoing
+                .send(self.write_buffer.split().freeze())
+                .map_err(|_| ErrorKind::BrokenPipe.into())
+        } else {
+            Ok(())
+        }
     }
 }
