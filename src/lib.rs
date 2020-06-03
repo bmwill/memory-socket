@@ -192,7 +192,7 @@ impl MemoryListener {
     ///     }
     /// }
     /// ```
-    pub fn incoming(&mut self) -> Incoming<'_> {
+    pub fn incoming(&self) -> Incoming<'_> {
         Incoming { inner: self }
     }
 
@@ -216,7 +216,7 @@ impl MemoryListener {
     ///     Err(e) => println!("couldn't get client: {:?}", e),
     /// }
     /// ```
-    pub fn accept(&mut self) -> Result<MemorySocket> {
+    pub fn accept(&self) -> Result<MemorySocket> {
         self.incoming.iter().next().ok_or_else(|| unreachable!())
     }
 }
@@ -230,7 +230,7 @@ impl MemoryListener {
 /// [`incoming`]: struct.MemoryListener.html#method.incoming
 /// [`MemoryListener`]: struct.MemoryListener.html
 pub struct Incoming<'a> {
-    inner: &'a mut MemoryListener,
+    inner: &'a MemoryListener,
 }
 
 impl<'a> Iterator for Incoming<'a> {
