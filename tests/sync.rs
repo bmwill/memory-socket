@@ -15,7 +15,7 @@ fn listener_bind() -> Result<()> {
 
 #[test]
 fn simple_connect() -> Result<()> {
-    let mut listener = MemoryListener::bind(10)?;
+    let listener = MemoryListener::bind(10)?;
 
     let mut dialer = MemorySocket::connect(10)?;
     let mut listener_socket = listener.incoming().next().unwrap()?;
@@ -32,7 +32,7 @@ fn simple_connect() -> Result<()> {
 
 #[test]
 fn listen_on_port_zero() -> Result<()> {
-    let mut listener = MemoryListener::bind(0)?;
+    let listener = MemoryListener::bind(0)?;
     let listener_addr = listener.local_addr();
 
     let mut dialer = MemorySocket::connect(listener_addr)?;
@@ -58,7 +58,7 @@ fn listen_on_port_zero() -> Result<()> {
 #[test]
 fn listener_correctly_frees_port_on_drop() -> Result<()> {
     fn connect_on_port(port: u16) -> Result<()> {
-        let mut listener = MemoryListener::bind(port)?;
+        let listener = MemoryListener::bind(port)?;
         let mut dialer = MemorySocket::connect(port)?;
         let mut listener_socket = listener.incoming().next().unwrap()?;
 
