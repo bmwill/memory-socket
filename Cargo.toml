@@ -1,6 +1,6 @@
 [package]
 name = "memory-socket"
-version = "0.1.0"
+version = "0.2.0"
 description = "In-memory socket abstraction"
 documentation = "https://docs.rs/memory-socket"
 repository = "https://github.com/bmwill/memory-socket"
