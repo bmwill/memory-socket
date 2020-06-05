@@ -24,7 +24,7 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     ///
     /// # async fn work () -> ::std::io::Result<()> {
-    /// let mut listener = MemoryListener::bind(80).unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:60").unwrap();
     /// let mut incoming = listener.incoming_stream();
     ///
     /// while let Some(stream) = incoming.next().await {
