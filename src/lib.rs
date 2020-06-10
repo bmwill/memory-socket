@@ -14,11 +14,10 @@
 use bytes::{buf::BufExt, Buf, Bytes, BytesMut};
 use flume::{Receiver, Sender};
 use once_cell::sync::Lazy;
-use rand::{thread_rng, Rng};
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Result, Write},
-    net::{SocketAddr, ToSocketAddrs},
+    net::SocketAddr,
     sync::Mutex,
 };
 
@@ -30,9 +29,9 @@ pub use r#async::IncomingStream;
 
 /// Collection of open connected sockets
 static SWITCHBOARD: Lazy<Mutex<SwitchBoard>> =
-    Lazy::new(|| Mutex::new(SwitchBoard(HashMap::default())));
+    Lazy::new(|| Mutex::new(SwitchBoard(HashMap::default(), 1)));
 
-struct SwitchBoard(HashMap<SocketAddr, Sender<MemorySocket>>);
+struct SwitchBoard(HashMap<SocketAddr, Sender<MemorySocket>>, u16);
 
 /// An in-memory socket server, listening for connections.
 ///
@@ -61,7 +60,7 @@ struct SwitchBoard(HashMap<SocketAddr, Sender<MemorySocket>>);
 /// }
 ///
 /// fn main() -> Result<()> {
-///     let mut listener = MemoryListener::bind("192.51.100.2:1337")?;
+///     let mut listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
 ///
 ///     // accept connections and process them serially
 ///     for stream in listener.incoming() {
@@ -104,24 +103,12 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// let listener = MemoryListener::bind("192.51.100.2:1337")?;
+    /// let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
     /// # Ok(())}
     /// ```
-    pub fn bind<A: ToSocketAddrs>(addresses: A) -> Result<Self> {
+    pub fn bind(mut address: SocketAddr) -> Result<Self> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
 
-        let mut addresses = addresses.to_socket_addrs()?;
-
-        let mut address = match addresses.next() {
-            Some(address) => address,
-            None => return Err(ErrorKind::AddrNotAvailable.into()),
-        };
-
-        // It doesn't really make sense to listen on multiple interfaces in
-        // this environment, so we place a restriction on the parameter.
-        if addresses.next().is_some() {
-            return Err(ErrorKind::AddrNotAvailable.into());
-        }
         // Similarly, it doesn't make a sense to listen on "all interfaces"
         // in this environment, so return an error if they requested 0.0.0.0
         // TODO: We could use get_if_addrs and use the host's real name?
@@ -131,10 +118,17 @@ impl MemoryListener {
 
         // If they didn't provide a port find one that isn't in use.
         if address.port() == 0 {
-            let mut rng = thread_rng();
-            address.set_port(rng.gen());
+            let start_port = switchboard.1;
+            address.set_port(switchboard.1);
             while switchboard.0.contains_key(&address) {
-                address.set_port(rng.gen());
+                switchboard.1 += 1;
+                if switchboard.1 == std::u16::MAX {
+                    switchboard.1 = 1;
+                }
+                if switchboard.1 == start_port {
+                    return Err(ErrorKind::AddrInUse.into());
+                }
+                address.set_port(switchboard.1);
             }
         } else if switchboard.0.contains_key(&address) {
             // Can't listen on the same address and port twice
@@ -162,7 +156,7 @@ impl MemoryListener {
     /// use std::net::SocketAddr;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// let listener = MemoryListener::bind("192.51.100.2:1337")?;
+    /// let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
     ///
     /// let expected: SocketAddr = "192.51.100.2:1337".parse().unwrap();
     /// assert_eq!(listener.local_addr().unwrap(), expected);
@@ -186,7 +180,7 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     /// use std::io::{Read, Write};
     ///
-    /// let mut listener = MemoryListener::bind("192.51.100.2:1337").unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap()).unwrap();
     ///
     /// for stream in listener.incoming() {
     ///     match stream {
@@ -215,7 +209,7 @@ impl MemoryListener {
     /// use std::net::TcpListener;
     /// use memory_socket::MemoryListener;
     ///
-    /// let mut listener = MemoryListener::bind("192.51.100.2:8080").unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:8080".parse().unwrap()).unwrap();
     /// match listener.accept() {
     ///     Ok(_socket) => println!("new client!"),
     ///     Err(e) => println!("couldn't get client: {:?}", e),
@@ -322,26 +316,23 @@ impl MemorySocket {
     /// use memory_socket::MemorySocket;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// # let _listener = memory_socket::MemoryListener::bind("192.51.100.2:60")?;
-    /// let socket = MemorySocket::connect("192.51.100.2:60")?;
+    /// # let _listener = memory_socket::MemoryListener::bind("192.51.100.2:60".parse().unwrap())?;
+    /// let socket = MemorySocket::connect("192.51.100.2:60".parse().unwrap())?;
     /// # Ok(())}
     /// ```
-    pub fn connect<A: ToSocketAddrs>(addresses: A) -> Result<MemorySocket> {
+    pub fn connect(address: SocketAddr) -> Result<MemorySocket> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
-        let addresses = addresses.to_socket_addrs()?;
-        for address in addresses {
-            if let Some(sender) = switchboard.0.get_mut(&address) {
-                let (socket_a, socket_b) = Self::new_pair();
-                // Send the socket to the listener
-                sender
-                    .send(socket_a)
-                    .map_err(|_| ErrorKind::AddrNotAvailable)?;
+        if let Some(sender) = switchboard.0.get_mut(&address) {
+            let (socket_a, socket_b) = Self::new_pair();
+            // Send the socket to the listener
+            sender
+                .send(socket_a)
+                .map_err(|_| ErrorKind::AddrNotAvailable)?;
 
-                return Ok(socket_b);
-            }
+            Ok(socket_b)
+        } else {
+            Err(ErrorKind::AddrNotAvailable.into())
         }
-
-        Err(ErrorKind::AddrNotAvailable.into())
     }
 }
 

@@ -15,7 +15,7 @@ use std::{
 
 #[test]
 fn listener_bind() -> Result<()> {
-    let listener = MemoryListener::bind("192.51.100.2:42")?;
+    let listener = MemoryListener::bind("192.51.100.2:42".parse().unwrap())?;
     let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 51, 100, 2)), 42);
     let actual = listener
         .local_addr()
@@ -28,15 +28,15 @@ fn listener_bind() -> Result<()> {
 #[test]
 fn bind_unspecified() {
     // Current implementation does not know how to handle unspecified address
-    let listener_result = MemoryListener::bind("0.0.0.0:0");
+    let listener_result = MemoryListener::bind("0.0.0.0:0".parse().unwrap());
     assert!(listener_result.is_err());
 }
 
 #[test]
 fn simple_connect() -> Result<()> {
-    let mut listener = MemoryListener::bind("192.51.100.2:10")?;
+    let mut listener = MemoryListener::bind("192.51.100.2:10".parse().unwrap())?;
 
-    let mut dialer = MemorySocket::connect("192.51.100.2:10")?;
+    let mut dialer = MemorySocket::connect("192.51.100.2:10".parse().unwrap())?;
     let mut listener_socket = block_on(listener.incoming_stream().next()).unwrap()?;
 
     block_on(dialer.write_all(b"foo"))?;
@@ -51,7 +51,7 @@ fn simple_connect() -> Result<()> {
 
 #[test]
 fn listen_on_port_zero() -> Result<()> {
-    let mut listener = MemoryListener::bind("192.51.100.2:0")?;
+    let mut listener = MemoryListener::bind("192.51.100.2:0".parse().unwrap())?;
     let listener_addr = listener.local_addr().expect("That is a valid address");
 
     let mut dialer = MemorySocket::connect(listener_addr)?;

@@ -24,7 +24,7 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     ///
     /// # async fn work () -> ::std::io::Result<()> {
-    /// let mut listener = MemoryListener::bind("192.51.100.2:60").unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:60".parse().unwrap()).unwrap();
     /// let mut incoming = listener.incoming_stream();
     ///
     /// while let Some(stream) = incoming.next().await {
@@ -41,7 +41,7 @@ impl MemoryListener {
         IncomingStream { inner: self }
     }
 
-    fn poll_accept(&mut self, context: &mut Context) -> Poll<Result<MemorySocket>> {
+    pub fn poll_accept(&mut self, context: &mut Context) -> Poll<Result<MemorySocket>> {
         match Pin::new(&mut self.incoming).poll_next(context) {
             Poll::Ready(Some(socket)) => Poll::Ready(Ok(socket)),
             // The stream will never terminate
