@@ -13,9 +13,7 @@ fn listener_bind() -> Result<()> {
     let listener = MemoryListener::bind("192.51.100.2:42".parse().unwrap())
         .expect("Should listen on valid address");
     let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 51, 100, 2)), 42);
-    let actual = listener
-        .local_addr()
-        .expect("Socket should have a local address");
+    let actual = listener.local_addr();
     assert_eq!(actual, expected);
 
     Ok(())
@@ -49,7 +47,7 @@ fn simple_connect() -> Result<()> {
 fn listen_on_port_zero() -> Result<()> {
     let listener =
         MemoryListener::bind("192.51.100.3:0".parse().unwrap()).expect("Should listen on port 0");
-    let listener_addr = listener.local_addr().expect("Should have a local address");
+    let listener_addr = listener.local_addr();
     assert_eq!(
         listener_addr.ip(),
         IpAddr::V4(Ipv4Addr::new(192, 51, 100, 3))

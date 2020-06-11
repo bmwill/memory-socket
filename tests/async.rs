@@ -17,9 +17,7 @@ use std::{
 fn listener_bind() -> Result<()> {
     let listener = MemoryListener::bind("192.51.100.2:42".parse().unwrap())?;
     let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 51, 100, 2)), 42);
-    let actual = listener
-        .local_addr()
-        .expect("Socket should have a local address");
+    let actual = listener.local_addr();
     assert_eq!(actual, expected);
 
     Ok(())
@@ -52,7 +50,7 @@ fn simple_connect() -> Result<()> {
 #[test]
 fn listen_on_port_zero() -> Result<()> {
     let mut listener = MemoryListener::bind("192.51.100.2:0".parse().unwrap())?;
-    let listener_addr = listener.local_addr().expect("That is a valid address");
+    let listener_addr = listener.local_addr();
 
     let mut dialer = MemorySocket::connect(listener_addr)?;
     let mut listener_socket = block_on(listener.incoming_stream().next()).unwrap()?;

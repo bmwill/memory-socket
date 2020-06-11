@@ -109,9 +109,9 @@ impl MemoryListener {
     pub fn bind(mut address: SocketAddr) -> Result<Self> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
 
-        // Similarly, it doesn't make a sense to listen on "all interfaces"
-        // in this environment, so return an error if they requested 0.0.0.0
-        // TODO: We could use get_if_addrs and use the host's real name?
+        // It doesn't make sense to listen on "all interfaces" as memory socket
+        // can mimic all potential addresses. Raise an error rather than
+        // trying to make something up.
         if address.ip().is_unspecified() {
             return Err(ErrorKind::AddrNotAvailable.into());
         }
@@ -159,11 +159,11 @@ impl MemoryListener {
     /// let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
     ///
     /// let expected: SocketAddr = "192.51.100.2:1337".parse().unwrap();
-    /// assert_eq!(listener.local_addr().unwrap(), expected);
+    /// assert_eq!(listener.local_addr(), expected);
     /// # Ok(())}
     /// ```
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.address)
+    pub fn local_addr(&self) -> SocketAddr {
+        self.address
     }
 
     /// Returns an iterator over the connections being received on this
@@ -322,16 +322,17 @@ impl MemorySocket {
     /// ```
     pub fn connect(address: SocketAddr) -> Result<MemorySocket> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
-        if let Some(sender) = switchboard.0.get_mut(&address) {
-            let (socket_a, socket_b) = Self::new_pair();
-            // Send the socket to the listener
-            sender
-                .send(socket_a)
-                .map_err(|_| ErrorKind::AddrNotAvailable)?;
+        match switchboard.0.get_mut(&address) {
+            Some(sender) => {
+                let (socket_a, socket_b) = Self::new_pair();
+                // Send the socket to the listener
+                sender
+                    .send(socket_a)
+                    .map_err(|_| ErrorKind::AddrNotAvailable)?;
 
-            Ok(socket_b)
-        } else {
-            Err(ErrorKind::AddrNotAvailable.into())
+                Ok(socket_b)
+            }
+            None => Err(ErrorKind::AddrNotAvailable.into()),
         }
     }
 }

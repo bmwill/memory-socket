@@ -41,7 +41,7 @@ impl MemoryListener {
         IncomingStream { inner: self }
     }
 
-    pub fn poll_accept(&mut self, context: &mut Context) -> Poll<Result<MemorySocket>> {
+    fn poll_accept(&mut self, context: &mut Context) -> Poll<Result<MemorySocket>> {
         match Pin::new(&mut self.incoming).poll_next(context) {
             Poll::Ready(Some(socket)) => Poll::Ready(Ok(socket)),
             // The stream will never terminate
