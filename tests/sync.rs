@@ -1,5 +1,8 @@
 use memory_socket::{MemoryListener, MemorySocket};
-use std::io::{Read, Result, Write};
+use std::{
+    io::{Read, Result, Write},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 //
 // MemoryListener Tests
@@ -7,17 +10,27 @@ use std::io::{Read, Result, Write};
 
 #[test]
 fn listener_bind() -> Result<()> {
-    let listener = MemoryListener::bind(42)?;
-    assert_eq!(listener.local_addr(), 42);
+    let listener = MemoryListener::bind("192.51.100.2:42".parse().unwrap())
+        .expect("Should listen on valid address");
+    let expected = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 51, 100, 2)), 42);
+    let actual = listener.local_addr();
+    assert_eq!(actual, expected);
 
     Ok(())
 }
 
 #[test]
-fn simple_connect() -> Result<()> {
-    let listener = MemoryListener::bind(10)?;
+fn bind_unspecified() {
+    // Current implementation does not know how to handle unspecified address
+    let listener_result = MemoryListener::bind("0.0.0.0:0".parse().unwrap());
+    assert!(listener_result.is_err());
+}
 
-    let mut dialer = MemorySocket::connect(10)?;
+#[test]
+fn simple_connect() -> Result<()> {
+    let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
+
+    let mut dialer = MemorySocket::connect("192.51.100.2:1337".parse().unwrap())?;
     let mut listener_socket = listener.incoming().next().unwrap()?;
 
     dialer.write_all(b"foo")?;
@@ -32,8 +45,14 @@ fn simple_connect() -> Result<()> {
 
 #[test]
 fn listen_on_port_zero() -> Result<()> {
-    let listener = MemoryListener::bind(0)?;
+    let listener =
+        MemoryListener::bind("192.51.100.3:0".parse().unwrap()).expect("Should listen on port 0");
     let listener_addr = listener.local_addr();
+    assert_eq!(
+        listener_addr.ip(),
+        IpAddr::V4(Ipv4Addr::new(192, 51, 100, 3))
+    );
+    assert_ne!(listener_addr.port(), 0);
 
     let mut dialer = MemorySocket::connect(listener_addr)?;
     let mut listener_socket = listener.incoming().next().unwrap()?;
@@ -57,9 +76,9 @@ fn listen_on_port_zero() -> Result<()> {
 
 #[test]
 fn listener_correctly_frees_port_on_drop() -> Result<()> {
-    fn connect_on_port(port: u16) -> Result<()> {
-        let listener = MemoryListener::bind(port)?;
-        let mut dialer = MemorySocket::connect(port)?;
+    fn connect_to(address: SocketAddr) -> Result<()> {
+        let listener = MemoryListener::bind(address)?;
+        let mut dialer = MemorySocket::connect(address)?;
         let mut listener_socket = listener.incoming().next().unwrap()?;
 
         dialer.write_all(b"foo")?;
@@ -72,8 +91,8 @@ fn listener_correctly_frees_port_on_drop() -> Result<()> {
         Ok(())
     }
 
-    connect_on_port(9)?;
-    connect_on_port(9)?;
+    connect_to("192.51.100.3:9".parse().unwrap())?;
+    connect_to("192.51.100.3:9".parse().unwrap())?;
 
     Ok(())
 }

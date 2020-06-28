@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 use std::{
     collections::HashMap,
     io::{ErrorKind, Read, Result, Write},
-    num::NonZeroU16,
+    net::SocketAddr,
     sync::Mutex,
 };
 
@@ -27,10 +27,11 @@ mod r#async;
 #[cfg(feature = "async")]
 pub use r#async::IncomingStream;
 
+/// Collection of open connected sockets
 static SWITCHBOARD: Lazy<Mutex<SwitchBoard>> =
     Lazy::new(|| Mutex::new(SwitchBoard(HashMap::default(), 1)));
 
-struct SwitchBoard(HashMap<NonZeroU16, Sender<MemorySocket>>, u16);
+struct SwitchBoard(HashMap<SocketAddr, Sender<MemorySocket>>, u16);
 
 /// An in-memory socket server, listening for connections.
 ///
@@ -59,7 +60,7 @@ struct SwitchBoard(HashMap<NonZeroU16, Sender<MemorySocket>>, u16);
 /// }
 ///
 /// fn main() -> Result<()> {
-///     let mut listener = MemoryListener::bind(16)?;
+///     let mut listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
 ///
 ///     // accept connections and process them serially
 ///     for stream in listener.incoming() {
@@ -70,7 +71,7 @@ struct SwitchBoard(HashMap<NonZeroU16, Sender<MemorySocket>>, u16);
 /// ```
 pub struct MemoryListener {
     incoming: Receiver<MemorySocket>,
-    port: NonZeroU16,
+    address: SocketAddr,
 }
 
 impl Drop for MemoryListener {
@@ -78,7 +79,7 @@ impl Drop for MemoryListener {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
         // Remove the Sending side of the channel in the switchboard when
         // MemoryListener is dropped
-        switchboard.0.remove(&self.port);
+        switchboard.0.remove(&self.address);
     }
 }
 
@@ -102,48 +103,44 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// let listener = MemoryListener::bind(16)?;
+    /// let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
     /// # Ok(())}
     /// ```
-    pub fn bind(port: u16) -> Result<Self> {
+    pub fn bind(mut address: SocketAddr) -> Result<Self> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
 
-        // Get the port we should bind to.  If 0 was given, use a random port
-        let port = if let Some(port) = NonZeroU16::new(port) {
-            if switchboard.0.contains_key(&port) {
-                return Err(ErrorKind::AddrInUse.into());
-            }
+        // It doesn't make sense to listen on "all interfaces" as memory socket
+        // can mimic all potential addresses. Raise an error rather than
+        // trying to make something up.
+        if address.ip().is_unspecified() {
+            return Err(ErrorKind::AddrNotAvailable.into());
+        }
 
-            port
-        } else {
-            loop {
-                let port = NonZeroU16::new(switchboard.1).unwrap_or_else(|| unreachable!());
-
-                // The switchboard is full and all ports are in use
-                if switchboard.0.len() == (std::u16::MAX - 1) as usize {
-                    return Err(ErrorKind::AddrInUse.into());
-                }
-
-                // Instead of overflowing to 0, resume searching at port 1 since port 0 isn't a
-                // valid port to bind to.
+        // If they didn't provide a port find one that isn't in use.
+        if address.port() == 0 {
+            let start_port = switchboard.1;
+            address.set_port(switchboard.1);
+            while switchboard.0.contains_key(&address) {
+                switchboard.1 += 1;
                 if switchboard.1 == std::u16::MAX {
                     switchboard.1 = 1;
-                } else {
-                    switchboard.1 += 1;
                 }
-
-                if !switchboard.0.contains_key(&port) {
-                    break port;
+                if switchboard.1 == start_port {
+                    return Err(ErrorKind::AddrInUse.into());
                 }
+                address.set_port(switchboard.1);
             }
-        };
+        } else if switchboard.0.contains_key(&address) {
+            // Can't listen on the same address and port twice
+            return Err(ErrorKind::AddrInUse.into());
+        }
 
         let (sender, receiver) = flume::unbounded();
-        switchboard.0.insert(port, sender);
+        switchboard.0.insert(address, sender);
 
         Ok(Self {
             incoming: receiver,
-            port,
+            address,
         })
     }
 
@@ -156,15 +153,17 @@ impl MemoryListener {
     ///
     /// ```
     /// use memory_socket::MemoryListener;
+    /// use std::net::SocketAddr;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// let listener = MemoryListener::bind(16)?;
+    /// let listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap())?;
     ///
-    /// assert_eq!(listener.local_addr(), 16);
+    /// let expected: SocketAddr = "192.51.100.2:1337".parse().unwrap();
+    /// assert_eq!(listener.local_addr(), expected);
     /// # Ok(())}
     /// ```
-    pub fn local_addr(&self) -> u16 {
-        self.port.get()
+    pub fn local_addr(&self) -> SocketAddr {
+        self.address
     }
 
     /// Returns an iterator over the connections being received on this
@@ -181,7 +180,7 @@ impl MemoryListener {
     /// use memory_socket::MemoryListener;
     /// use std::io::{Read, Write};
     ///
-    /// let mut listener = MemoryListener::bind(80).unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:1337".parse().unwrap()).unwrap();
     ///
     /// for stream in listener.incoming() {
     ///     match stream {
@@ -210,7 +209,7 @@ impl MemoryListener {
     /// use std::net::TcpListener;
     /// use memory_socket::MemoryListener;
     ///
-    /// let mut listener = MemoryListener::bind(8080).unwrap();
+    /// let mut listener = MemoryListener::bind("192.51.100.2:8080".parse().unwrap()).unwrap();
     /// match listener.accept() {
     ///     Ok(_socket) => println!("new client!"),
     ///     Err(e) => println!("couldn't get client: {:?}", e),
@@ -317,29 +316,24 @@ impl MemorySocket {
     /// use memory_socket::MemorySocket;
     ///
     /// # fn main () -> ::std::io::Result<()> {
-    /// # let _listener = memory_socket::MemoryListener::bind(16)?;
-    /// let socket = MemorySocket::connect(16)?;
+    /// # let _listener = memory_socket::MemoryListener::bind("192.51.100.2:60".parse().unwrap())?;
+    /// let socket = MemorySocket::connect("192.51.100.2:60".parse().unwrap())?;
     /// # Ok(())}
     /// ```
-    pub fn connect(port: u16) -> Result<MemorySocket> {
+    pub fn connect(address: SocketAddr) -> Result<MemorySocket> {
         let mut switchboard = (&*SWITCHBOARD).lock().unwrap();
+        match switchboard.0.get_mut(&address) {
+            Some(sender) => {
+                let (socket_a, socket_b) = Self::new_pair();
+                // Send the socket to the listener
+                sender
+                    .send(socket_a)
+                    .map_err(|_| ErrorKind::AddrNotAvailable)?;
 
-        // Find port to connect to
-        let port = NonZeroU16::new(port).ok_or_else(|| ErrorKind::AddrNotAvailable)?;
-
-        let sender = switchboard
-            .0
-            .get_mut(&port)
-            .ok_or_else(|| ErrorKind::AddrNotAvailable)?;
-
-        let (socket_a, socket_b) = Self::new_pair();
-
-        // Send the socket to the listener
-        sender
-            .send(socket_a)
-            .map_err(|_| ErrorKind::AddrNotAvailable)?;
-
-        Ok(socket_b)
+                Ok(socket_b)
+            }
+            None => Err(ErrorKind::AddrNotAvailable.into()),
+        }
     }
 }
 
